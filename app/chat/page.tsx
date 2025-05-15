@@ -2,27 +2,20 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db } from '../../firebaseConfig'; // Ensure db is imported
+import { auth } from '../../firebaseConfig';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { Timestamp, collection, query, where, orderBy, onSnapshot, DocumentData, QueryDocumentSnapshot, addDoc } from 'firebase/firestore'; // Import addDoc
+import { Timestamp } from 'firebase/firestore';
+import {
+  subscribeToChatHistory,
+  subscribeToMessages,
+  createNewChat,
+  sendMessage as sendChatMessage,
+  deleteChat as deleteChatService,
+  Message as ChatMessage,
+  ChatHistoryItem
+} from '../../lib/chatService';
 
-// Define a type for your message structure
-type Message = {
-  id: string; // Firestore document ID
-  text: string;
-  sender: 'user' | 'ai';
-  timestamp: Timestamp; // Firestore Timestamp
-};
-
-// Define a type for your chat history item
-type ChatHistoryItem = {
-  id: string; // Firestore document ID
-  userId: string;
-  title: string;
-  createdAt: Timestamp; // Firestore Timestamp
-  lastMessageTimestamp: Timestamp; // Firestore Timestamp
-  lastMessageText?: string; // Optional: for display in chat list
-};
+// Chat types imported from lib/chatService
 
 export default function ChatPage() {
   const router = useRouter();
@@ -31,7 +24,7 @@ export default function ChatPage() {
 
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(true);
@@ -52,74 +45,38 @@ export default function ChatPage() {
   // Effect to fetch chat history
   useEffect(() => {
     if (user) {
-      setIsLoadingAuth(true); // Indicate loading of chat history
-      const chatsRef = collection(db, 'chats');
-      const q = query(
-        chatsRef,
-        where('userId', '==', user.uid),
-        orderBy('lastMessageTimestamp', 'desc')
-      );
-
-      const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
-        const history: ChatHistoryItem[] = [];
-        querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
-          const data = doc.data();
-          history.push({
-            id: doc.id,
-            userId: data.userId,
-            title: data.title || 'Untitled Chat',
-            createdAt: data.createdAt || Timestamp.now(), // Provide default if undefined
-            lastMessageTimestamp: data.lastMessageTimestamp || Timestamp.now(), // Provide default
-            lastMessageText: data.lastMessageText || '',
-          });
-        });
-        setChatHistory(history);
-        if (!activeChatId && history.length > 0) {
-          // setActiveChatId(history[0].id); // Optionally auto-select the first chat
+      setIsLoadingAuth(true);
+      const unsubscribe = subscribeToChatHistory(
+        user.uid,
+        (history) => {
+          setChatHistory(history);
+          setIsLoadingAuth(false);
+        },
+        (error) => {
+          console.error('Error fetching chat history: ', error);
+          setIsLoadingAuth(false);
         }
-        setIsLoadingAuth(false); // Finished loading chat history
-      }, (error) => {
-        console.error("Error fetching chat history: ", error);
-        // Handle error appropriately, e.g., show a toast message
-        setIsLoadingAuth(false);
-      });
-
-      return () => unsubscribeFirestore(); // Cleanup Firestore listener
+      );
+      return unsubscribe;
     } else {
-      // Clear chat history if user logs out or is not available
       setChatHistory([]);
       setActiveChatId(null);
     }
-  }, [user, activeChatId]); // Rerun when user changes or activeChatId changes (to potentially re-evaluate auto-selection)
+  }, [user]);
 
   // Effect to fetch messages for the selected chat
   useEffect(() => {
     if (activeChatId) {
-      const messagesRef = collection(db, 'chats', activeChatId, 'messages');
-      const q = query(messagesRef, orderBy('timestamp', 'asc'));
-
-      const unsubscribeMessages = onSnapshot(q, (querySnapshot) => {
-        const chatMessages: Message[] = [];
-        querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
-          const data = doc.data();
-          chatMessages.push({
-            id: doc.id,
-            text: data.text,
-            sender: data.sender,
-            timestamp: data.timestamp || Timestamp.now(), // Provide default if undefined
-          });
-        });
-        setMessages(chatMessages);
-      }, (error) => {
-        console.error("Error fetching messages: ", error);
-        // Optionally, show an error message to the user
-      });
-
-      return () => unsubscribeMessages(); // Cleanup Firestore listener
+      const unsubscribe = subscribeToMessages(
+        activeChatId,
+        (msgs: ChatMessage[]) => setMessages(msgs),
+        (error) => console.error('Error fetching messages: ', error)
+      );
+      return unsubscribe;
     } else {
-      setMessages([]); // Clear messages if no active chat
+      setMessages([]);
     }
-  }, [activeChatId]); // Rerun when activeChatId changes
+  }, [activeChatId]);
 
   const handleSignOut = async () => {
     try {
@@ -138,7 +95,7 @@ export default function ChatPage() {
     setIsSending(true);
 
     // Optimistically update the UI
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(), // Temporary ID
       text: newMessage,
       sender: 'user',
@@ -148,28 +105,27 @@ export default function ChatPage() {
     setNewMessage('');
 
     try {
-      // Add the user's message to Firestore
-      const messagesRef = collection(db, 'chats', activeChatId, 'messages');
-      await addDoc(messagesRef, {
+      // Send user message via service
+      await sendChatMessage(activeChatId, {
         text: userMessage.text,
         sender: userMessage.sender,
-        timestamp: userMessage.timestamp,
+        timestamp: userMessage.timestamp
       });
 
       // Simulate AI response
       setTimeout(async () => {
-        const aiResponse: Message = {
+        const aiResponse: ChatMessage = {
           id: (Date.now() + 1).toString(), // Temporary ID
           text: `AI response to: "${userMessage.text}"`,
           sender: 'ai',
           timestamp: Timestamp.now(),
         };
 
-        // Add the AI's response to Firestore
-        await addDoc(messagesRef, {
+        // Send AI response via service
+        await sendChatMessage(activeChatId, {
           text: aiResponse.text,
           sender: aiResponse.sender,
-          timestamp: aiResponse.timestamp,
+          timestamp: aiResponse.timestamp
         });
       }, 1000); // Simulate delay for AI response
     } catch (error) {
@@ -181,28 +137,27 @@ export default function ChatPage() {
   };
 
   const handleNewChat = async () => {
-    if (!user) {
-      console.error("User not authenticated to create a new chat.");
-      return;
-    }
+    if (!user) return;
     setIsCreatingChat(true);
     try {
-      const now = Timestamp.now();
-      const newChatData = {
-        userId: user.uid,
-        title: "New Chat", // You can make this more dynamic, e.g., based on date
-        createdAt: now,
-        lastMessageTimestamp: now,
-        lastMessageText: "",
-      };
-      const docRef = await addDoc(collection(db, 'chats'), newChatData);
-      setActiveChatId(docRef.id); // Set the new chat as active
-      setMessages([]); // Clear messages for the new chat
+      const newChatId = await createNewChat(user.uid);
+      setActiveChatId(newChatId);
+      setMessages([]);
     } catch (error) {
-      console.error("Error creating new chat: ", error);
-      // Optionally, show an error message to the user
+      console.error('Error creating new chat: ', error);
     } finally {
       setIsCreatingChat(false);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    if (!activeChatId) return;
+    try {
+      await deleteChatService(activeChatId);
+      setActiveChatId(null);
+      setMessages([]);
+    } catch (error) {
+      console.error('Error deleting chat: ', error);
     }
   };
 
@@ -235,15 +190,6 @@ export default function ChatPage() {
           <>
             <div className="p-4 border-b border-gray-700 flex justify-between items-center">
               <h2 className="text-xl font-semibold">Chat History</h2>
-              <button 
-                onClick={() => setIsSidePanelOpen(false)}
-                className="p-1 rounded hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 md:hidden" // Hide on larger screens where panel might be fixed
-              >
-                {/* Placeholder for close icon (e.g., X) */}
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
             <div className="flex-grow overflow-y-auto">
               {chatHistory.map((chat) => (
@@ -292,6 +238,18 @@ export default function ChatPage() {
             <h2 className="text-xl font-semibold text-gray-800">
               {activeChatId ? chatHistory.find(c => c.id === activeChatId)?.title : 'Select or Start a Chat'}
             </h2>
+            {activeChatId && (
+              <button
+                onClick={handleDeleteChat}
+                className="ml-4 text-red-500 hover:text-red-700 focus:outline-none"
+                title="Delete this chat"
+              >
+                {/* Trash Icon */}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
           <div className="flex items-center space-x-3">
             <span className="text-sm text-gray-600">{user.email}</span>
