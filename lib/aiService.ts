@@ -1,3 +1,6 @@
+import { httpsCallable } from "firebase/functions";
+import { getFunctions } from "firebase/functions";
+import { db } from "../firebaseConfig";
 
 interface AiServiceResponse {
   ai_response: string;
@@ -5,50 +8,26 @@ interface AiServiceResponse {
 }
 
 export const fetchAiResponse = async (docId: string, query: string): Promise<string> => {
-  const requestBody = {
-    input_text: query,
-    thread_id: docId,
-  };
+  // Get the Firebase Functions instance
+  const functions = getFunctions();
+  // Reference the callable function deployed in Firebase (adjust name as needed)
+  const getAiResponse = httpsCallable(functions, "getAiResponse");
 
   try {
-    const response = await fetch('https://reflection-backend-1p0x.onrender.com/post', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
+    const result: any = await getAiResponse({
+      input_text: query,
+      thread_id: docId,
     });
-
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        // Backend did not return JSON, or other parsing error
-        console.error("Failed to parse error response from backend:", e);
-      }
-      console.error("Backend error:", errorData);
-      throw new Error(
-        `HTTP error! status: ${response.status}${errorData?.detail ? ` - ${errorData.detail}` : ''}`
-      );
-    }
-
-    const responseData: AiServiceResponse = await response.json();
-
-    if (typeof responseData.ai_response !== 'string') {
-      console.error("AI response not found or not a string in backend response:", responseData);
+    // The result.data should contain the ai_response
+    if (!result?.data?.ai_response || typeof result.data.ai_response !== "string") {
       throw new Error("AI response not found or not in the expected format.");
     }
-
-    return responseData.ai_response;
-
+    return result.data.ai_response;
   } catch (error) {
-    console.error("Failed to fetch AI response:", error);
-    // Re-throw the error so the caller can handle it appropriately
+    console.error("Failed to fetch AI response from Firebase:", error);
     if (error instanceof Error) {
       throw error;
     }
-    // Fallback for non-Error objects thrown
-    throw new Error('An unknown error occurred while fetching the AI response.');
+    throw new Error("An unknown error occurred while fetching the AI response from Firebase.");
   }
 };

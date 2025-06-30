@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   auth,
@@ -11,9 +11,10 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   UserCredential,
-  // FirebaseError, // Corrected: This type is not directly exported from 'firebase/auth' for this usage
+  onAuthStateChanged, // Added for auth state listener
 } from 'firebase/auth';
 
 export default function AuthPage() {
@@ -31,8 +32,36 @@ export default function AuthPage() {
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
   const [formError, setFormError] = useState(''); // General form error
 
-  // Loading state
-  const [isLoading, setIsLoading] = useState(false);
+  // '''  // Loading states
+  const [isLoading, setIsLoading] = useState(false); // For form submissions
+  const [isCheckingRedirect, setIsCheckingRedirect] = useState(true); // For initial redirect check
+
+  useEffect(() => {
+    const checkRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          // Don't set isLoading here, as we are redirecting
+          handleAuthSuccess(result);
+        }
+      } catch (error) {
+        handleAuthError(error);
+      } finally {
+        // This runs regardless of whether a redirect result was found
+        setIsCheckingRedirect(false);
+      }
+    };
+    checkRedirectResult();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace('/chat'); // Redirect on auth state change
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
 
   const resetFormAndErrors = () => {
     setEmail('');
@@ -93,7 +122,7 @@ export default function AuthPage() {
   const handleAuthSuccess = (userCredential: UserCredential) => {
     console.log('Auth success:', userCredential.user);
     resetFormAndErrors();
-    router.push('/chat'); // Redirect to chat page
+    // router.replace('/chat'); // Use replace for navigation
   };
 
   const handleAuthError = (error: any) => { // Changed FirebaseError to any for broader compatibility
@@ -127,6 +156,7 @@ export default function AuthPage() {
     } else {
         setFormError('An unexpected error occurred. Please try again.');
     }
+    setIsLoading(false);
   };
 
   const handleLoginSubmit = async (e: FormEvent) => {
@@ -142,8 +172,6 @@ export default function AuthPage() {
         handleAuthSuccess(userCredential);
       } catch (error) {
         handleAuthError(error);
-      } finally {
-        setIsLoading(false);
       }
     }
   };
@@ -162,8 +190,6 @@ export default function AuthPage() {
         handleAuthSuccess(userCredential);
       } catch (error) {
         handleAuthError(error);
-      } finally {
-        setIsLoading(false);
       }
     }
   };
@@ -173,17 +199,26 @@ export default function AuthPage() {
     setIsLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      const userCredential = await signInWithPopup(auth, provider);
-      handleAuthSuccess(userCredential);
+      await signInWithRedirect(auth, provider);
     } catch (error) {
       handleAuthError(error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
+  if (isCheckingRedirect) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+        <div className="text-lg font-medium text-gray-700">Authenticating...</div>
+        <svg className="animate-spin mt-4 h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4 font-sans">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4 font-sans">'''
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">

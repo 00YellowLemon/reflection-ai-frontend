@@ -36,6 +36,22 @@ export type ReflectionLog = {
   status?: 'in-progress' | 'completed';
 };
 
+export type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: Timestamp;
+};
+
+export type ChatSession = {
+  id: string;
+  title: string;
+  lastMessage: string;
+  updatedAt: Timestamp;
+  createdAt: Timestamp;
+  messages?: ChatMessage[];
+};
+
 /**
  * Subscribe to reflection logs for a user. Calls onUpdate with the logs array.
  * Returns an unsubscribe function.
@@ -182,3 +198,150 @@ export async function updateChatHistoryLastMessage(userId: string, chatId: strin
     updatedAt: Timestamp.now()
   });
 }
+
+/**
+ * Subscribe to chat sessions for a user. Calls onUpdate with the sessions array.
+ * Returns an unsubscribe function.
+ */
+export const subscribeToChatSessions = (
+  userId: string,
+  onUpdate: (sessions: ChatSession[]) => void,
+  onError?: (error: any) => void
+) => {
+  const chatHistoryRef = collection(db, 'users', userId, 'chatHistory');
+  const q = query(chatHistoryRef, orderBy('updatedAt', 'desc'));
+  return onSnapshot(
+    q,
+    (querySnapshot) => {
+      const sessions: ChatSession[] = [];
+      querySnapshot.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => {
+        const data = docSnap.data();
+        sessions.push({
+          id: docSnap.id,
+          title: data.title || 'New Chat',
+          lastMessage: data.lastMessage || '',
+          updatedAt: data.updatedAt || Timestamp.now(),
+          createdAt: data.createdAt || Timestamp.now(),
+        });
+      });
+      onUpdate(sessions);
+    },
+    onError
+  );
+};
+
+/**
+ * Subscribe to messages for a specific chat session. Calls onUpdate with the messages array.
+ * Returns an unsubscribe function.
+ */
+export const subscribeToChatMessages = (
+  userId: string,
+  chatId: string,
+  onUpdate: (messages: ChatMessage[]) => void,
+  onError?: (error: any) => void
+) => {
+  const messagesRef = collection(db, 'users', userId, 'chatHistory', chatId, 'messages');
+  const q = query(messagesRef, orderBy('createdAt', 'asc'));
+  return onSnapshot(
+    q,
+    (querySnapshot) => {
+      const messages: ChatMessage[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        messages.push({
+          id: docSnap.id,
+          role: data.role,
+          content: data.content,
+          createdAt: data.createdAt || Timestamp.now(),
+        });
+      });
+      onUpdate(messages);
+    },
+    onError
+  );
+};
+
+/**
+ * Create a new chat session for a user. Returns the new chat session ID.
+ */
+export const startNewChatSession = async (userId: string): Promise<string> => {
+  const now = Timestamp.now();
+  const newChatId = uuidv4();
+  
+  const newChatSessionData = {
+    title: 'New Chat',
+    lastMessage: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  
+  await setDoc(doc(db, 'users', userId, 'chatHistory', newChatId), newChatSessionData);
+  return newChatId;
+};
+
+/**
+ * Add a message to a chat session and update chat session metadata.
+ */
+export const addChatMessage = async (
+  userId: string,
+  chatId: string,
+  message: {
+    role: 'user' | 'assistant';
+    content: string;
+  }
+): Promise<string> => {
+  const now = Timestamp.now();
+  const messagesRef = collection(db, 'users', userId, 'chatHistory', chatId, 'messages');
+  const messageRef = await addDoc(messagesRef, {
+    ...message,
+    createdAt: now,
+  });
+  
+  // Update chat session metadata
+  const chatSessionRef = doc(db, 'users', userId, 'chatHistory', chatId);
+  await updateDoc(chatSessionRef, {
+    lastMessage: message.content,
+    updatedAt: now,
+    // Update title if this is the first user message
+    ...(message.role === 'user' ? {
+      title: message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '')
+    } : {})
+  });
+  
+  return messageRef.id;
+};
+
+/**
+ * Delete a chat session and all its messages.
+ */
+export const deleteChatSession = async (userId: string, chatId: string): Promise<void> => {
+  // First delete all messages in the session
+  const messagesRef = collection(db, 'users', userId, 'chatHistory', chatId, 'messages');
+  const messagesSnapshot = await getDocs(messagesRef);
+  
+  const deletePromises = messagesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+  await Promise.all(deletePromises);
+  
+  // Then delete the chat session document
+  const chatSessionRef = doc(db, 'users', userId, 'chatHistory', chatId);
+  await deleteDoc(chatSessionRef);
+};
+
+/**
+ * Get messages for a specific chat session (one-time fetch).
+ */
+export const getChatMessages = async (userId: string, chatId: string): Promise<ChatMessage[]> => {
+  const messagesRef = collection(db, 'users', userId, 'chatHistory', chatId, 'messages');
+  const q = query(messagesRef, orderBy('createdAt', 'asc'));
+  const querySnapshot = await getDocs(q);
+  
+  return querySnapshot.docs.map((docSnap) => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      role: data.role,
+      content: data.content,
+      createdAt: data.createdAt || Timestamp.now(),
+    };
+  });
+};

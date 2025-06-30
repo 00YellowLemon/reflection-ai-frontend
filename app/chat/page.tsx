@@ -2,19 +2,33 @@
 
 import type React from "react"
 
-import { useChat } from "@ai-sdk/react"
+import { useChat, type Message } from "@ai-sdk/react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card } from "@/components/ui/card"
 import { MessageCircle, Plus, Trash2, Send, Menu, X } from "lucide-react"
+import { fetchAiResponse } from "@/lib/aiService"; // Added import
+import { useAuth } from "@/lib/useAuth";
+import { 
+  subscribeToChatSessions, 
+  subscribeToChatMessages, 
+  startNewChatSession, 
+  addChatMessage, 
+  deleteChatSession as deleteFirestoreChatSession,
+  getChatMessages,
+  type ChatMessage as FirestoreChatMessage,
+  type ChatSession as FirestoreChatSession
+} from "@/lib/chatService";
+import { useRouter } from 'next/navigation';
+import { Timestamp } from 'firebase/firestore';
 
 interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
-  createdAt?: string
+  createdAt?: string // Ensure this is string for storage/display
 }
 
 interface ChatSession {
@@ -25,145 +39,241 @@ interface ChatSession {
 }
 
 export default function ChatApp() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (loading) return; // Wait for auth state to be determined
+    if (!user) {
+      router.push('/auth');
+    }
+  }, [user, loading, router]);
+
+  // Helper to convert Firestore ChatMessage to local ChatMessage
+  const convertFirestoreChatMessage = (msg: FirestoreChatMessage): ChatMessage => ({
+    id: msg.id,
+    role: msg.role,
+    content: msg.content,
+    createdAt: msg.createdAt.toDate().toISOString(),
+  });
+
+  // Helper to convert stored ChatMessage to Message for useChat
+  const convertChatMessageToUIMessage = (msg: ChatMessage): Message => ({
+    id: msg.id,
+    role: msg.role as Message['role'],
+    content: msg.content,
+    createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+  });
+
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [displayMessages, setDisplayMessages] = useState<ChatMessage[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat({
-    onFinish: (message) => {
-      // The message is already handled by the useEffect above
-      // Just ensure we save to storage if needed
-      if (currentSessionId) {
-        const currentMessages = messages.map((msg) => ({
-          id: msg.id,
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-          createdAt: new Date().toISOString(),
-        }))
-        saveChatToStorage(currentMessages)
-      }
-    },
-  })
+    // Removed onFinish callback as we'll handle AI response manually
+  });
 
-  // Load chat sessions from localStorage on mount
+  // Load saved session from localStorage when component mounts
   useEffect(() => {
-    const savedSessions = localStorage.getItem("chatSessions")
-    if (savedSessions) {
-      try {
-        const sessions = JSON.parse(savedSessions)
-        setChatSessions(sessions)
-      } catch (error) {
-        console.error("Error loading chat sessions:", error)
-        localStorage.removeItem("chatSessions")
+    if (user) {
+      const savedSessionId = localStorage.getItem(`currentChatSession_${user.uid}`);
+      if (savedSessionId) {
+        setCurrentSessionId(savedSessionId);
       }
     }
-  }, [])
+  }, [user]);
 
-  // Sync useChat messages with display messages
+  // Save current session to localStorage when it changes
   useEffect(() => {
-    if (messages.length > 0 && currentSessionId) {
-      // Convert useChat messages to our format
-      const chatMessages: ChatMessage[] = messages.map((msg) => ({
-        id: msg.id,
-        role: msg.role as "user" | "assistant",
-        content: msg.content,
-        createdAt: new Date().toISOString(),
-      }))
-
-      // Update display messages to match useChat messages
-      setDisplayMessages(chatMessages)
-
-      // Save to storage
-      saveChatToStorage(chatMessages)
+    if (user && currentSessionId) {
+      localStorage.setItem(`currentChatSession_${user.uid}`, currentSessionId);
+    } else if (user && currentSessionId === null) {
+      localStorage.removeItem(`currentChatSession_${user.uid}`);
     }
-  }, [messages, currentSessionId])
+  }, [user, currentSessionId]);
 
-  const saveChatToStorage = (updatedMessages: ChatMessage[]) => {
-    if (!currentSessionId) return
+  // Subscribe to chat sessions when user is authenticated
+  useEffect(() => {
+    if (!user) return;
 
-    const updatedSessions = chatSessions.map((session) =>
-      session.id === currentSessionId
-        ? {
-            ...session,
-            messages: updatedMessages,
-            title: session.title || updatedMessages[0]?.content?.slice(0, 30) + "..." || "New Chat",
+    console.log("Subscribing to chat sessions for user:", user.uid);
+
+    const unsubscribe = subscribeToChatSessions(
+      user.uid,
+      (firestoreSessions) => {
+        console.log("Received chat sessions:", firestoreSessions.length);
+        const sessions: ChatSession[] = firestoreSessions.map(session => ({
+          id: session.id,
+          title: session.title,
+          messages: [], // Will be loaded when session is selected
+          createdAt: session.createdAt.toDate().toISOString(),
+        }));
+        setChatSessions(sessions);
+        
+        // Auto-load session based on stored session ID or most recent session
+        if (sessions.length > 0) {
+          const savedSessionId = localStorage.getItem(`currentChatSession_${user.uid}`);
+          console.log("Saved session ID:", savedSessionId, "Current session ID:", currentSessionId);
+          
+          // Check if saved session still exists
+          if (savedSessionId && sessions.find(s => s.id === savedSessionId)) {
+            if (!currentSessionId || currentSessionId !== savedSessionId) {
+              console.log("Loading saved session:", savedSessionId);
+              setCurrentSessionId(savedSessionId);
+            }
+          } else if (!currentSessionId) {
+            // If no saved session or it doesn't exist, load the most recent one
+            console.log("Loading most recent session:", sessions[0].id);
+            setCurrentSessionId(sessions[0].id);
           }
-        : session,
-    )
+        } else {
+          console.log("No chat sessions found");
+        }
+      },
+      (error) => {
+        console.error("Error subscribing to chat sessions:", error);
+      }
+    );
 
-    setChatSessions(updatedSessions)
-    localStorage.setItem("chatSessions", JSON.stringify(updatedSessions))
+    return () => unsubscribe();
+  }, [user]); // Removed currentSessionId dependency to avoid infinite loops
+
+  // Subscribe to messages for the current session
+  useEffect(() => {
+    if (!user || !currentSessionId) {
+      console.log("Skipping message subscription - user:", !!user, "currentSessionId:", currentSessionId);
+      return;
+    }
+
+    console.log("Subscribing to messages for session:", currentSessionId);
+
+    const unsubscribe = subscribeToChatMessages(
+      user.uid,
+      currentSessionId,
+      (firestoreMessages) => {
+        console.log("Received messages for session:", currentSessionId, "count:", firestoreMessages.length);
+        const messages = firestoreMessages.map(convertFirestoreChatMessage);
+        setDisplayMessages(messages);
+        
+        // Update useChat messages
+        const chatMessagesForUseChat = messages.map((msg) => ({
+          ...convertChatMessageToUIMessage(msg),
+          parts: [], // Add empty parts array to satisfy UIMessage type
+        }));
+        setMessages(chatMessagesForUseChat);
+      },
+      (error) => {
+        console.error("Error subscribing to chat messages:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, currentSessionId, setMessages]);
+  const startNewChat = async () => {
+    if (!user) return;
+    
+    setMessages([]) // Clear messages in useChat
+    setDisplayMessages([]) // Clear displayed messages immediately
+    setCurrentSessionId(null) // Set current session to null
+    
+    // Clear input field
+    const syntheticEvent = { target: { value: "" }, currentTarget: { value: "" }} as React.ChangeEvent<HTMLInputElement>;
+    handleInputChange(syntheticEvent);
   }
 
-  const startNewChat = () => {
-    setMessages([])
-    setDisplayMessages([])
-    setCurrentSessionId(null)
+  const loadChatSession = async (session: ChatSession) => {
+    if (!user) return;
+    
+    setCurrentSessionId(session.id);
+    
+    // Clear input field
+    const syntheticEvent = { target: { value: "" }, currentTarget: { value: "" }} as React.ChangeEvent<HTMLInputElement>;
+    handleInputChange(syntheticEvent);
+    
+    // Messages will be loaded automatically by the useEffect subscription
   }
 
-  const loadChatSession = (session: ChatSession) => {
-    // Set the session first
-    setCurrentSessionId(session.id)
-
-    // Load the historical messages into display
-    setDisplayMessages(session.messages)
-
-    // Also set them in useChat so new messages continue the conversation
-    const chatMessages = session.messages.map((msg) => ({
-      id: msg.id,
-      role: msg.role,
-      content: msg.content,
-    }))
-
-    setMessages(chatMessages)
-  }
-
-  const deleteChatSession = (sessionId: string) => {
-    const updatedSessions = chatSessions.filter((session) => session.id !== sessionId)
-    setChatSessions(updatedSessions)
-    localStorage.setItem("chatSessions", JSON.stringify(updatedSessions))
-
-    if (currentSessionId === sessionId) {
-      startNewChat()
+  const deleteChatSession = async (sessionId: string) => {
+    if (!user) return;
+    
+    try {
+      await deleteFirestoreChatSession(user.uid, sessionId);
+      
+      if (currentSessionId === sessionId) {
+        startNewChat();
+      }
+    } catch (error) {
+      console.error("Error deleting chat session:", error);
     }
   }
-
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    if (!input.trim() || !user) return
 
-    if (!input.trim()) return
+    const userInput = input; // Capture input before clearing
 
-    // If this is an existing chat, we need to set up useChat with the complete history
-    if (currentSessionId && displayMessages.length > 0) {
-      // Convert display messages to useChat format (without adding the new message yet)
-      const chatMessages = displayMessages.map((msg) => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-      }))
+    let sessionIdToUse = currentSessionId;
 
-      // Set the complete conversation history in useChat
-      setMessages(chatMessages)
-    } else {
-      // New chat - create session
-      if (!currentSessionId) {
-        const newSession: ChatSession = {
-          id: Date.now().toString(),
-          title: input.slice(0, 30) + (input.length > 30 ? "..." : ""),
-          messages: [],
-          createdAt: new Date().toISOString(),
-        }
-
-        const updatedSessions = [newSession, ...chatSessions]
-        setChatSessions(updatedSessions)
-        setCurrentSessionId(newSession.id)
-        localStorage.setItem("chatSessions", JSON.stringify(updatedSessions))
+    // Handle session creation if no current session
+    if (!sessionIdToUse) {
+      try {
+        sessionIdToUse = await startNewChatSession(user.uid);
+        setCurrentSessionId(sessionIdToUse);
+      } catch (error) {
+        console.error("Error creating new chat session:", error);
+        return;
       }
     }
 
-    // Submit to AI (this will add the user message and trigger the AI response)
-    handleSubmit(e)
+    // Clear input field immediately
+    const syntheticEvent = { target: { value: "" }, currentTarget: { value: "" }} as React.ChangeEvent<HTMLInputElement>;
+    handleInputChange(syntheticEvent);
+    
+    try {
+      // Add user message to Firestore
+      await addChatMessage(user.uid, sessionIdToUse, {
+        role: 'user',
+        content: userInput,
+      });
+
+      // Call AI Service
+      const aiResponseContent = await fetchAiResponse(sessionIdToUse, userInput);
+
+      // Add AI response to Firestore
+      await addChatMessage(user.uid, sessionIdToUse, {
+        role: 'assistant',
+        content: aiResponseContent,
+      });
+
+    } catch (error) {
+      console.error("Error in chat submission:", error);
+      
+      // Add error message to Firestore
+      try {
+        await addChatMessage(user.uid, sessionIdToUse, {
+          role: 'assistant',
+          content: "Sorry, I encountered an error trying to respond. Please try again.",
+        });
+      } catch (errorAddingError) {
+        console.error("Error adding error message:", errorAddingError);
+      }
+    }
+  }
+
+  // Show loading spinner while authenticating
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render anything if not authenticated (will redirect)
+  if (!user) {
+    return null;
   }
 
   return (
@@ -194,9 +304,9 @@ export default function ChatApp() {
                     <div className="flex items-center gap-2 mb-1">
                       <MessageCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
                       <p className="text-sm font-medium truncate">{session.title}</p>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      {new Date(session.createdAt).toLocaleDateString()} • {session.messages.length} messages
+                    </div>                    <p className="text-xs text-gray-500">
+                      {new Date(session.createdAt).toLocaleDateString()}
+                      {currentSessionId === session.id ? ` • ${displayMessages.length} messages` : ''}
                     </p>
                   </div>
                   <Button
