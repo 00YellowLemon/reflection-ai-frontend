@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card } from "@/components/ui/card"
-import { MessageCircle, Plus, Trash2, Send, Menu, X } from "lucide-react"
-import { fetchAiResponse } from "@/lib/aiService"; // Added import
+import { MessageCircle, Plus, Trash2, Send, Menu, X, LogOut } from "lucide-react"
 import { useAuth } from "@/lib/useAuth";
 import { 
   subscribeToChatSessions, 
@@ -39,7 +38,7 @@ interface ChatSession {
 }
 
 export default function ChatApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const router = useRouter();
   
   // Redirect to auth if not authenticated
@@ -238,13 +237,29 @@ export default function ChatApp() {
         content: userInput,
       });
 
-      // Call AI Service
-      const aiResponseContent = await fetchAiResponse(sessionIdToUse, userInput);
+      // Call the API route to get AI response
+      const response = await fetch('/api/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userInput,
+          chatHistory: displayMessages, // Send current chat history
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from API');
+      }
+
+      const data = await response.json();
+      const aiResponseContent = data.response;
 
       // Add AI response to Firestore
       await addChatMessage(user.uid, sessionIdToUse, {
         role: 'assistant',
-        content: aiResponseContent,
+        content: aiResponseContent ?? "Sorry, I couldn't generate a response.",
       });
 
     } catch (error) {
@@ -342,6 +357,7 @@ export default function ChatApp() {
               </span>
             )}
           </div>
+          <Button variant="outline" onClick={signOut}><LogOut className="h-4 w-4 mr-2" />Logout</Button>
         </div>
 
         {/* Messages */}
