@@ -20,13 +20,13 @@ export default function Home() {
       </div>
 
       {/* Navigation Bar */}
-      <header className="relative z-10 flex justify-between items-center px-8 py-6 backdrop-blur-sm bg-white/70 border-b border-gray-100">
+      <header className="relative z-10 flex justify-between items-center px-6 py-6 backdrop-blur-sm bg-white/70 border-b border-gray-100">
         <div className="flex items-center">
-          <h1 className="text-xl md:text-2xl lg:text-3xl xl:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita AI</h1>
+          <h1 className="text-2xl md:text-2xl lg:text-3xl  font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita AI</h1>
         </div>
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-6">
-          <Link href="/chat" className="text-gray-600 hover:text-gray-900 transition-colors">How it Works</Link>
+          <Link href="/auth" className="text-gray-600 hover:text-gray-900 transition-colors">How it Works</Link>
           <Link href="#" className="text-gray-600 hover:text-gray-900 transition-colors">Resources</Link>
           <Link href="#" className="text-gray-600 hover:text-gray-900 transition-colors">Support</Link>
           <Link
@@ -94,7 +94,7 @@ export default function Home() {
                 Start Your Journey
               </Link>
               <Link
-                href="/chat"
+                href="/auth"
                 className="px-8 py-3 text-gray-800 text-lg font-medium bg-white border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 transition-all"
               >
                 Try Now
