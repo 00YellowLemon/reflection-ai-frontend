@@ -57,7 +57,17 @@ export default function AuthPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.replace('/chat'); // Redirect on auth state change
+        // User is signed in
+        document.cookie = `firebaseAuthToken=${user.accessToken}; path=/; max-age=3600`; // Set cookie for middleware
+        router.replace('/chat');
+      } else {
+        // User is signed out
+        document.cookie = 'firebaseAuthToken=; path=/; max-age=0'; // Clear cookie
+        // Optional: redirect to home if they are on a page that requires auth
+        // and they just signed out from here.
+        // However, middleware will handle redirecting from /chat if they try to access it.
+        // If they are on /auth page and sign out, they should stay or go to '/'
+        // router.replace('/'); // Uncomment if you want to redirect to home on logout from auth page
       }
     });
     return () => unsubscribe();
@@ -119,10 +129,20 @@ export default function AuthPage() {
     return true;
   };
 
-  const handleAuthSuccess = (userCredential: UserCredential) => {
+  const handleAuthSuccess = async (userCredential: UserCredential) => {
     console.log('Auth success:', userCredential.user);
+    // The onAuthStateChanged listener will handle cookie setting and redirection
+    // So, we might not need to explicitly redirect here if the listener is robust enough.
+    // However, setting the cookie immediately can be beneficial.
+    if (userCredential.user) {
+      // It's good practice to get the ID token for HTTP-only cookies if you were using server-side auth.
+      // For client-side accessible cookies for middleware, accessToken might be considered,
+      // but ID token is standard for auth purposes.
+      const token = await userCredential.user.getIdToken();
+      document.cookie = `firebaseAuthToken=${token}; path=/; max-age=3600`; // Expires in 1 hour
+    }
     resetFormAndErrors();
-    // router.replace('/chat'); // Use replace for navigation
+    // router.replace('/chat'); // Redirection is now handled by onAuthStateChanged
   };
 
   const handleAuthError = (error: any) => { // Changed FirebaseError to any for broader compatibility
