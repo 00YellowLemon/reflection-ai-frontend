@@ -15,6 +15,7 @@ import {
   getRedirectResult,
   UserCredential,
   onAuthStateChanged, // Added for auth state listener
+  signInWithPopup, // Added for popup sign-in
 } from 'firebase/auth';
 
 export default function AuthPage() {
@@ -39,12 +40,24 @@ export default function AuthPage() {
   useEffect(() => {
     const checkRedirectResult = async () => {
       try {
+        console.log('Checking for redirect result...');
         const result = await getRedirectResult(auth);
         if (result) {
+          console.log('Found redirect result, handling auth success');
+          console.log('User from redirect result:', result.user);
           // Don't set isLoading here, as we are redirecting
           handleAuthSuccess(result);
+        } else {
+          console.log('No redirect result found');
+          // Check if user is already authenticated (fallback)
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            console.log('User already authenticated, redirecting to chat');
+            handleAuthSuccess({ user: currentUser } as UserCredential);
+          }
         }
       } catch (error) {
+        console.error('Error checking redirect result:', error);
         handleAuthError(error);
       } finally {
         // This runs regardless of whether a redirect result was found
@@ -54,14 +67,25 @@ export default function AuthPage() {
     checkRedirectResult();
   }, []);
 
+  // Add a periodic check for authentication state as a fallback
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        router.replace('/chat'); // Redirect on auth state change
+    const checkAuthState = () => {
+      const currentUser = auth.currentUser;
+      console.log('Periodic auth check - currentUser:', currentUser?.uid || 'null');
+      if (currentUser && !isCheckingRedirect) {
+        console.log('Periodic auth check found authenticated user, redirecting');
+        handleAuthSuccess({ user: currentUser } as UserCredential);
       }
-    });
-    return () => unsubscribe();
-  }, [router]);
+    };
+
+    // Check immediately
+    checkAuthState();
+    
+    // Then check every 2 seconds as a fallback
+    const interval = setInterval(checkAuthState, 2000);
+    
+    return () => clearInterval(interval);
+  }, [isCheckingRedirect]);
 
   const resetFormAndErrors = () => {
     setEmail('');
@@ -122,7 +146,8 @@ export default function AuthPage() {
   const handleAuthSuccess = (userCredential: UserCredential) => {
     console.log('Auth success:', userCredential.user);
     resetFormAndErrors();
-    router.replace('/chat'); // Use replace for navigation
+    // Force a hard redirect to ensure the page changes
+    window.location.href = '/chat';
   };
 
   const handleAuthError = (error: any) => { // Changed FirebaseError to any for broader compatibility
@@ -161,6 +186,7 @@ export default function AuthPage() {
 
   const handleLoginSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    console.log('Login form submitted');
     setFormError('');
     const isEmailValid = validateEmail(email);
     const isPasswordValid = validatePassword(password);
@@ -168,9 +194,12 @@ export default function AuthPage() {
     if (isEmailValid && isPasswordValid) {
       setIsLoading(true);
       try {
+        console.log('Attempting to sign in with email/password...');
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log('Sign in successful, calling handleAuthSuccess');
         handleAuthSuccess(userCredential);
       } catch (error) {
+        console.error('Sign in error:', error);
         handleAuthError(error);
       }
     }
@@ -195,12 +224,17 @@ export default function AuthPage() {
   };
 
   const handleGoogleSignIn = async () => {
+    console.log('Google sign-in initiated');
     setFormError('');
     setIsLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithRedirect(auth, provider);
+      console.log('Calling signInWithPopup...');
+      const result = await signInWithPopup(auth, provider);
+      console.log('signInWithPopup completed, user:', result.user);
+      handleAuthSuccess(result);
     } catch (error) {
+      console.error('Google sign-in error:', error);
       handleAuthError(error);
     }
   };

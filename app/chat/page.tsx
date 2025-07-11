@@ -43,9 +43,13 @@ export default function ChatApp() {
   
   // Redirect to auth if not authenticated
   useEffect(() => {
+    console.log('Chat page auth check - loading:', loading, 'user:', user?.uid);
     if (loading) return; // Wait for auth state to be determined
     if (!user) {
+      console.log('No user found, redirecting to auth');
       router.push('/auth');
+    } else {
+      console.log('User authenticated, staying on chat page');
     }
   }, [user, loading, router]);
 
