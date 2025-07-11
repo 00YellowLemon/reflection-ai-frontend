@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Sheet, SheetTrigger, SheetContent, SheetTitle, SheetHeader } from "@/components/ui/sheet";
+import { Menu } from "lucide-react";
 
 export default function Home() {
   return (
@@ -17,7 +19,8 @@ export default function Home() {
         <div className="flex items-center">
           <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita</h1>
         </div>
-        <div className="flex items-center gap-6">
+        {/* Desktop Nav */}
+        <div className="hidden md:flex items-center gap-6">
           <Link href="/chat" className="text-gray-600 hover:text-gray-900 transition-colors">How it Works</Link>
           <Link href="#" className="text-gray-600 hover:text-gray-900 transition-colors">Resources</Link>
           <Link href="#" className="text-gray-600 hover:text-gray-900 transition-colors">Support</Link>
@@ -27,6 +30,44 @@ export default function Home() {
           >
             Start Free
           </Link>
+        </div>
+        {/* Mobile Nav: Sheet */}
+        <div className="md:hidden">
+          <Sheet>
+            <SheetTrigger asChild>
+              <button aria-label="Open menu">
+                <Menu className="w-7 h-7 text-gray-700" />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="right" className="bg-white/90 backdrop-blur-xl shadow-2xl p-0">
+              <div className="flex flex-col h-full justify-between">
+                {/* Sheet Header with Logo */}
+                <div className="flex flex-col items-center pt-8 pb-4 border-b border-gray-100">
+                  {/* Accessibility title for dialog */}
+                  <SheetTitle className="sr-only">Main Menu</SheetTitle>
+                  <Image src="/globe.svg" width={48} height={48} alt="Soita Logo" className="mb-2" />
+                  <span className="text-2xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita</span>
+                </div>
+                {/* Sheet Navigation */}
+                <nav className="flex flex-col gap-2 px-6 py-8 flex-1">
+                  <Link href="/chat" className="text-gray-800 text-xl font-semibold rounded-lg px-3 py-3 hover:bg-blue-50 transition-colors">How it Works</Link>
+                  <Link href="#" className="text-gray-800 text-xl font-semibold rounded-lg px-3 py-3 hover:bg-blue-50 transition-colors">Resources</Link>
+                  <Link href="#" className="text-gray-800 text-xl font-semibold rounded-lg px-3 py-3 hover:bg-blue-50 transition-colors">Support</Link>
+                  <div className="my-4 border-t border-gray-100"></div>
+                  <Link
+                    href="/auth"
+                    className="w-full px-4 py-3 bg-black text-white text-lg font-bold rounded-lg hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all text-center shadow"
+                  >
+                    Start Free
+                  </Link>
+                </nav>
+                {/* Sheet Footer */}
+                <div className="px-6 pb-8 pt-4 border-t border-gray-100 text-center text-gray-400 text-sm">
+                  <span>Empowering your peace of mind</span>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </header>
 
@@ -99,7 +140,7 @@ export default function Home() {
         </div>
       </main>
 
-      /* Features Section */
+      {/* Features Section */}
       <section className="relative z-10 py-16 px-8 border-t border-gray-100">
         <div className="max-w-5xl mx-auto">
           <h3 className="text-2xl font-bold text-center mb-12 text-gray-900">Evidence-based tools for worry management</h3>

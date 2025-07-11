@@ -22,6 +22,7 @@ import {
 } from "@/lib/chatService";
 import { useRouter } from 'next/navigation';
 import { Timestamp } from 'firebase/firestore';
+import { Sheet, SheetTrigger, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 interface ChatMessage {
   id: string
@@ -72,7 +73,7 @@ export default function ChatApp() {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [displayMessages, setDisplayMessages] = useState<ChatMessage[]>([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+
 
   const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat({
     // Removed onFinish callback as we'll handle AI response manually
@@ -296,73 +297,76 @@ export default function ChatApp() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div
-        className={`${sidebarOpen ? "w-80" : "w-0"} transition-all duration-300 overflow-hidden bg-white border-r border-gray-200`}
-      >
-        <div className="p-4 border-b border-gray-200">
-          <Button onClick={startNewChat} className="w-full justify-start gap-2" variant="outline">
-            <Plus className="h-4 w-4" />
-            New Chat
-          </Button>
-        </div>
-
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-2">
-            {chatSessions.map((session) => (
-              <Card
-                key={session.id}
-                className={`p-3 cursor-pointer hover:bg-gray-50 transition-colors ${
-                  currentSessionId === session.id ? "bg-blue-50 border-blue-200" : ""
-                }`}
-                onClick={() => loadChatSession(session)}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <MessageCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                      <p className="text-sm font-medium truncate">{session.title}</p>
-                    </div>                    <p className="text-xs text-gray-500">
-                      {new Date(session.createdAt).toLocaleDateString()}
-                      {currentSessionId === session.id ? ` • ${displayMessages.length} messages` : ''}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteChatSession(session.id)
-                    }}
-                    className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2">
-              {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+    <Sheet>
+      <div className="flex h-screen bg-gray-50">
+        <SheetContent side="left" className="p-0 w-72">
+          {/* Accessibility title for dialog */}
+          <SheetTitle className="sr-only">Chat Sessions</SheetTitle>
+          <div className="pt-12 p-4 border-b border-gray-200">
+            <Button onClick={startNewChat} className="w-full justify-start gap-2" variant="outline">
+              <Plus className="h-4 w-4" />
+              New Chat
             </Button>
-            <h1 className="text-lg font-semibold text-gray-900">AI Chat Assistant</h1>
-            {currentSessionId && (
-              <span className="text-sm text-gray-500">
-                • {chatSessions.find((s) => s.id === currentSessionId)?.title}
-              </span>
-            )}
           </div>
-          <Button variant="outline" onClick={signOut}><LogOut className="h-4 w-4 mr-2" />Logout</Button>
-        </div>
+          <ScrollArea className="flex-1 p-4">
+            <div className="space-y-2">
+              {chatSessions.map((session) => (
+                <Card
+                  key={session.id}
+                  className={`p-3 cursor-pointer hover:bg-gray-50 transition-colors ${
+                    currentSessionId === session.id ? "bg-blue-50 border-blue-200" : ""
+                  }`}
+                  onClick={() => loadChatSession(session)}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <MessageCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                        <p className="text-sm font-medium truncate">{session.title}</p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {new Date(session.createdAt).toLocaleDateString()}
+                        {currentSessionId === session.id ? ` • ${displayMessages.length} messages` : ''}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteChatSession(session.id)
+                      }}
+                      className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+        </SheetContent>
+        
+        {/* Main Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Header */}
+          <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* Sheet trigger for sidebar */}
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="sm" className="p-2">
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <h1 className="text-lg font-semibold text-gray-900">AI Chat Assistant</h1>
+              {currentSessionId && (
+                <span className="text-sm text-gray-500">
+                  • {chatSessions.find((s) => s.id === currentSessionId)?.title}
+                </span>
+              )}
+            </div>
+            <Button variant="outline" onClick={signOut}><LogOut className="h-4 w-4 mr-2" />Logout</Button>
+          </div>
 
         {/* Messages */}
         <ScrollArea className="flex-1 p-4">
@@ -410,5 +414,6 @@ export default function ChatApp() {
         </div>
       </div>
     </div>
+    </Sheet>
   )
 }
