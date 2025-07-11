@@ -122,7 +122,7 @@ export default function AuthPage() {
   const handleAuthSuccess = (userCredential: UserCredential) => {
     console.log('Auth success:', userCredential.user);
     resetFormAndErrors();
-    // router.replace('/chat'); // Use replace for navigation
+    router.replace('/chat'); // Use replace for navigation
   };
 
   const handleAuthError = (error: any) => { // Changed FirebaseError to any for broader compatibility
