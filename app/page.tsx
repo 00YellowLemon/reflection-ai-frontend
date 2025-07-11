@@ -1,3 +1,8 @@
+// Set page metadata
+export const metadata = {
+  title: 'Soita AI',
+  description: 'Soita AI - Mental health assistant',
+};
 import Image from "next/image";
 import Link from "next/link";
 import { Sheet, SheetTrigger, SheetContent, SheetTitle, SheetHeader } from "@/components/ui/sheet";
@@ -17,7 +22,7 @@ export default function Home() {
       {/* Navigation Bar */}
       <header className="relative z-10 flex justify-between items-center px-8 py-6 backdrop-blur-sm bg-white/70 border-b border-gray-100">
         <div className="flex items-center">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita</h1>
+          <h1 className="text-xl md:text-2xl lg:text-3xl xl:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-transparent bg-clip-text">Soita AI</h1>
         </div>
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-6">

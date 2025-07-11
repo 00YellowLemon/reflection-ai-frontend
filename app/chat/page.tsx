@@ -1,5 +1,6 @@
 "use client"
 
+
 import type React from "react"
 
 import { useChat, type Message } from "@ai-sdk/react"
@@ -358,7 +359,7 @@ export default function ChatApp() {
                   <Menu className="h-4 w-4" />
                 </Button>
               </SheetTrigger>
-              <h1 className="text-lg font-semibold text-gray-900">AI Chat Assistant</h1>
+              <h1 className="text-lg font-semibold text-gray-900">Soita AI</h1>
               {currentSessionId && (
                 <span className="text-sm text-gray-500">
                   • {chatSessions.find((s) => s.id === currentSessionId)?.title}
